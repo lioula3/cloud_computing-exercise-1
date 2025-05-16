@@ -228,11 +228,26 @@ func main() {
 	})
 
 	e.GET("/authors", func(c echo.Context) error {
-		return c.NoContent(http.StatusNoContent)
+		authors := findAllBooks(coll)
+		// authorSet := make(map[string]struct{})
+		// for _, book := range books {
+		// 	if author, ok := book["BookAuthor"].(string); ok {
+		// 		authorSet[author] = struct{}{}
+		// 	}
+		// }
+
+		// // On les transforme en slice
+		// var authors []string
+		// for author := range authorSet {
+		// 	authors = append(authors, author)
+		// }
+
+		return c.Render(200, "authors-table", authors)
 	})
 
 	e.GET("/years", func(c echo.Context) error {
-		return c.NoContent(http.StatusNoContent)
+		years := findAllBooks(coll)
+		return c.Render(200, "years-table", years)
 	})
 
 	e.GET("/search", func(c echo.Context) error {
