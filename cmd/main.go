@@ -201,6 +201,10 @@ func main() {
 	// one by yourself!
 	coll, err := prepareDatabase(client, "exercise-1", "information")
 
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	prepareData(client, coll)
 
 	// Here we prepare the server
@@ -229,25 +233,36 @@ func main() {
 	})
 
 	e.GET("/authors", func(c echo.Context) error {
-		authors := findAllBooks(coll)
-		// authorSet := make(map[string]struct{})
-		// for _, book := range books {
-		// 	if author, ok := book["BookAuthor"].(string); ok {
-		// 		authorSet[author] = struct{}{}
-		// 	}
-		// }
+		books := findAllBooks(coll)
+		authorSet := make(map[string]struct{})
+		for _, book := range books {
+			if author, ok := book["BookAuthor"].(string); ok {
+				authorSet[author] = struct{}{}
+			}
+		}
 
-		// // On les transforme en slice
-		// var authors []string
-		// for author := range authorSet {
-		// 	authors = append(authors, author)
-		// }
+		var authors []string
+		for author := range authorSet {
+			authors = append(authors, author)
+		}
 
 		return c.Render(200, "authors-table", authors)
 	})
 
 	e.GET("/years", func(c echo.Context) error {
-		years := findAllBooks(coll)
+		books := findAllBooks(coll)
+		yearSet := make(map[string]struct{})
+		for _, book := range books {
+			if year, ok := book["BookYear"].(string); ok {
+				yearSet[year] = struct{}{}
+			}
+		}
+
+		var years []string
+		for year := range yearSet {
+			years = append(years, year)
+		}
+
 		return c.Render(200, "years-table", years)
 	})
 
@@ -287,6 +302,7 @@ func main() {
 		if err := c.Bind(&input); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		}
+
 		// Vérifier les champs obligatoires
 		id, ok1 := input["id"].(string)
 		title, ok2 := input["title"].(string)
@@ -307,13 +323,38 @@ func main() {
 			"BookEdition": input["edition"],
 			"BookYear":    input["year"],
 		}
+
+		// Vérifier si un livre identique existe déjà
+		filter := bson.M{
+			"ID":          id,
+			"BookName":    title,
+			"BookAuthor":  author,
+			"BookEdition": input["edition"],
+			"BookPages":   input["pages"],
+			"BookYear":    input["year"],
+		}
+
+		count, err := coll.CountDocuments(context.TODO(), filter)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "database error",
+			})
+		}
+
+		if count > 0 {
+			return c.JSON(http.StatusConflict, map[string]string{
+				"error": "duplicate book entry",
+			})
+		}
+
 		// Insérer dans MongoDB
-		_, err := coll.InsertOne(context.TODO(), book)
+		_, err = coll.InsertOne(context.TODO(), book)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{
 				"error": "could not insert book",
 			})
 		}
+
 		// Retourner 201 Created
 		return c.JSON(http.StatusCreated, map[string]string{
 			"message": "book created",
