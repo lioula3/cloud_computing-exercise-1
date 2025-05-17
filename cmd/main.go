@@ -267,7 +267,141 @@ func main() {
 	// method.
 	e.GET("/api/books", func(c echo.Context) error {
 		books := findAllBooks(coll)
-		return c.JSON(http.StatusOK, books)
+		var response []map[string]interface{}
+		for _, book := range books {
+			formatted := map[string]interface{}{
+				"id":      book["ID"],
+				"title":   book["BookName"],
+				"author":  book["BookAuthor"],
+				"pages":   book["BookPages"],
+				"edition": book["BookEdition"],
+				"year":    book["BookYear"],
+			}
+			response = append(response, formatted)
+		}
+		return c.JSON(http.StatusOK, response)
+	})
+
+	e.POST("/api/books", func(c echo.Context) error {
+		var input map[string]interface{}
+		if err := c.Bind(&input); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		}
+		// Vérifier les champs obligatoires
+		id, ok1 := input["id"].(string)
+		title, ok2 := input["title"].(string)
+		author, ok3 := input["author"].(string)
+
+		if !ok1 || !ok2 || !ok3 || id == "" || title == "" || author == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "id, title and author are required",
+			})
+		}
+
+		// Construire un document à insérer
+		book := map[string]interface{}{
+			"ID":          id,
+			"BookName":    title,
+			"BookAuthor":  author,
+			"BookPages":   input["pages"],
+			"BookEdition": input["edition"],
+			"BookYear":    input["year"],
+		}
+		// Insérer dans MongoDB
+		_, err := coll.InsertOne(context.TODO(), book)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "could not insert book",
+			})
+		}
+		// Retourner 201 Created
+		return c.JSON(http.StatusCreated, map[string]string{
+			"message": "book created",
+		})
+	})
+
+	e.PUT("/api/books/:id", func(c echo.Context) error {
+		// Récupérer l'ID depuis l'URL
+		bookID := c.Param("id")
+
+		// Lire le corps de la requête JSON
+		var input map[string]interface{}
+		if err := c.Bind(&input); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		}
+
+		// Créer le filtre pour trouver le bon livre
+		filter := bson.M{"ID": bookID}
+
+		// Créer le document à mettre à jour (uniquement les champs envoyés)
+		update := bson.M{
+			"$set": bson.M{},
+		}
+
+		// Champs possibles à mettre à jour
+		fields := []string{"title", "author", "edition", "pages", "year"}
+
+		for _, field := range fields {
+			if val, ok := input[field]; ok {
+				// Adapter les noms aux champs en base
+				var mongoField string
+				switch field {
+				case "title":
+					mongoField = "BookName"
+				case "author":
+					mongoField = "BookAuthor"
+				case "edition":
+					mongoField = "BookEdition"
+				case "pages":
+					mongoField = "BookPages"
+				case "year":
+					mongoField = "BookYear"
+				}
+				update["$set"].(bson.M)[mongoField] = val
+			}
+		}
+
+		// Effectuer la mise à jour
+		result, err := coll.UpdateOne(context.TODO(), filter, update)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update book"})
+		}
+
+		// Aucun livre trouvé avec cet ID ?
+		if result.MatchedCount == 0 {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "book not found"})
+		}
+
+		// Succès
+		return c.JSON(http.StatusOK, map[string]string{"message": "book updated"})
+	})
+
+	e.DELETE("/api/books/:id", func(c echo.Context) error {
+		// Récupérer l'ID logique depuis l'URL
+		bookID := c.Param("id")
+
+		// Créer un filtre pour chercher le bon livre
+		filter := bson.M{"ID": bookID}
+
+		// Supprimer le document
+		result, err := coll.DeleteOne(context.TODO(), filter)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "could not delete book",
+			})
+		}
+
+		// Si aucun document supprimé, c’est que le livre n’existait pas
+		if result.DeletedCount == 0 {
+			return c.JSON(http.StatusNotFound, map[string]string{
+				"error": "book not found",
+			})
+		}
+
+		// Suppression réussie
+		return c.JSON(http.StatusOK, map[string]string{
+			"message": "book deleted",
+		})
 	})
 
 	// We start the server and bind it to port 3030. For future references, this
