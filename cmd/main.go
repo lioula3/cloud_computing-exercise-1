@@ -361,6 +361,37 @@ func main() {
 		})
 	})
 
+	e.GET("/api/books/:id", func(c echo.Context) error {
+		bookID := c.Param("id")
+
+		filter := bson.M{"ID": bookID}
+
+		var book BookStore
+		err := coll.FindOne(context.TODO(), filter).Decode(&book)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				return c.JSON(http.StatusNotFound, map[string]string{
+					"error": fmt.Sprintf("Book with ID: %s not found. Is it stored?", bookID),
+				})
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "database error",
+			})
+		}
+
+		// Construire la réponse JSON
+		response := map[string]interface{}{
+			"id":      book.ID,
+			"title":   book.BookName,
+			"author":  book.BookAuthor,
+			"edition": book.BookEdition,
+			"pages":   book.BookPages,
+			"year":    book.BookYear,
+		}
+
+		return c.JSON(http.StatusOK, response)
+	})
+
 	e.PUT("/api/books/:id", func(c echo.Context) error {
 		// Récupérer l'ID depuis l'URL
 		bookID := c.Param("id")
